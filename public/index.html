@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DragonFly Route Demo - 22 July 2026</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQOrAm2hHsbD39pFfMRQQP5CuP7k9Yw=" crossorigin="" />
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #e2e8f0; color: #0f172a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    .app { height: 100vh; min-height: 580px; display: grid; grid-template-columns: minmax(340px, 410px) minmax(0, 1fr); overflow: hidden; background: #e2e8f0; }
+    .route-panel { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid #cbd5e1; background: #f8fafc; box-shadow: 4px 0 18px rgb(15 23 42 / .08); z-index: 2; }
+    .route-header { padding: 1.05rem 1rem .9rem; border-bottom: 1px solid #dbe4ee; background: #fff; }
+    .eyebrow { margin: 0 0 .25rem; color: #64748b; font-size: .68rem; font-weight: 900; letter-spacing: .075em; text-transform: uppercase; }
+    h1 { margin: 0; color: #0f172a; font: 950 1.15rem/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .route-subtitle { margin: .34rem 0 0; color: #475569; font-size: .77rem; font-weight: 650; }
+    .route-status { display: inline-flex; align-items: center; gap: .35rem; margin-top: .65rem; border-radius: 999px; background: #ecfeff; color: #0f766e; padding: .27rem .55rem; font-size: .67rem; font-weight: 900; }
+    .route-status::before { width: .44rem; height: .44rem; border-radius: 999px; background: #0f766e; content: ""; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; padding: .7rem .75rem; border-bottom: 1px solid #dbe4ee; background: #f8fafc; }
+    .metric { min-height: 59px; border: 1px solid #dbe4ee; border-radius: .5rem; background: #fff; padding: .5rem .58rem; }
+    .metric span { display: block; color: #64748b; font-size: .62rem; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+    .metric strong { display: block; margin-top: .15rem; color: #0f172a; font-size: .98rem; font-weight: 950; line-height: 1.1; }
+    .metric.estimate { border-color: #99f6e4; background: #f0fdfa; }
+    .metric.estimate strong { color: #0f766e; }
+    .route-note { margin: 0; border-bottom: 1px solid #dbe4ee; background: #fff; padding: .62rem .85rem; color: #475569; font-size: .68rem; font-weight: 650; line-height: 1.35; }
+    .stop-controls { display: flex; align-items: center; gap: .55rem; border-bottom: 1px solid #dbe4ee; background: #fff; padding: .62rem .75rem; }
+    .stop-search { width: 100%; min-height: 36px; border: 1px solid #94a3b8; border-radius: .35rem; background: #fff; padding: 0 .65rem; color: #0f172a; font: 700 .75rem/1.2 inherit; outline: none; }
+    .stop-search:focus { border-color: #0e7490; box-shadow: 0 0 0 3px rgb(14 116 144 / .13); }
+    .stop-count { flex: 0 0 auto; color: #475569; font-size: .67rem; font-weight: 900; white-space: nowrap; }
+    .stop-list { min-height: 0; flex: 1; overflow-y: auto; padding: .45rem; background: #f1f5f9; }
+    .stop { width: 100%; min-height: 58px; display: grid; grid-template-columns: 31px minmax(0, 1fr) auto; align-items: center; gap: .58rem; margin: 0 0 .35rem; border: 1px solid #d6e0ea; border-radius: .35rem; background: #fff; padding: .48rem .52rem; color: inherit; cursor: pointer; text-align: left; transition: border-color .12s ease, background .12s ease, box-shadow .12s ease; }
+    .stop:hover, .stop:focus-visible, .stop.active { border-color: #0e7490; background: #f0fdfa; box-shadow: 0 0 0 2px rgb(13 148 136 / .12); outline: none; }
+    .stop-index { width: 29px; height: 32px; display: grid; place-items: center; border-radius: .2rem; background: #e0f2fe; color: #0e7490; font-size: .78rem; font-weight: 950; }
+    .stop.street .stop-index { background: #fef3c7; color: #a16207; }
+    .stop-address { display: block; overflow: hidden; color: #0c4a6e; font-size: .75rem; font-weight: 900; line-height: 1.22; text-overflow: ellipsis; white-space: nowrap; }
+    .stop-meta { display: block; margin-top: .14rem; color: #64748b; font-size: .63rem; font-weight: 700; line-height: 1.2; }
+    .stop.street .stop-meta { color: #a16207; }
+    .stop-package { color: #475569; font-size: .64rem; font-weight: 850; white-space: nowrap; }
+    .empty-stops { padding: 1rem; color: #64748b; font-size: .78rem; font-weight: 750; text-align: center; }
+    #map { min-width: 0; min-height: 0; height: 100vh; background: #eaf2f6; }
+    /* Small local copy of Leaflet's layout rules. The temporary page must still
+       render cleanly when the public stylesheet is unavailable. */
+    .leaflet-container { position: relative; overflow: hidden; outline: 0; font: inherit; }
+    .leaflet-pane, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-tile-container, .leaflet-pane > svg, .leaflet-pane > canvas, .leaflet-zoom-box, .leaflet-image-layer, .leaflet-layer { position: absolute; left: 0; top: 0; }
+    .leaflet-pane { z-index: 400; } .leaflet-tile-pane { z-index: 200; } .leaflet-overlay-pane { z-index: 400; } .leaflet-shadow-pane { z-index: 500; } .leaflet-marker-pane { z-index: 600; } .leaflet-tooltip-pane { z-index: 650; } .leaflet-popup-pane { z-index: 700; }
+    .leaflet-tile { visibility: hidden; } .leaflet-tile-loaded { visibility: inherit; } .leaflet-zoom-box { width: 0; height: 0; box-sizing: border-box; z-index: 800; }
+    .leaflet-control { position: relative; z-index: 800; pointer-events: visiblePainted; } .leaflet-top, .leaflet-bottom { position: absolute; z-index: 1000; pointer-events: none; } .leaflet-top { top: 0; } .leaflet-right { right: 0; } .leaflet-bottom { bottom: 0; } .leaflet-left { left: 0; }
+    .leaflet-control-zoom { margin: 10px; border: 1px solid #94a3b8; border-radius: .35rem; overflow: hidden; background: #fff; box-shadow: 0 1px 4px rgb(15 23 42 / .2); } .leaflet-control-zoom a { display: block; width: 29px; height: 29px; border-bottom: 1px solid #cbd5e1; color: #0f172a; text-align: center; font: 700 20px/28px Arial, sans-serif; text-decoration: none; pointer-events: auto; } .leaflet-control-zoom a:last-child { border-bottom: 0; }
+    .leaflet-control-attribution { margin: 0 4px 4px 0; border-radius: .18rem; background: rgb(255 255 255 / .75); padding: 0 4px; color: #334155; font-size: 10px; } .leaflet-control-attribution a { color: #0f766e; text-decoration: none; }
+    .marker { width: 30px; height: 30px; display: grid; place-items: center; border: 2px solid #0e7490; border-radius: 999px; background: #e0f2fe; color: #0f172a; box-shadow: 0 1px 2px rgb(15 23 42 / .2); font: 900 11px/1 Inter, ui-sans-serif, sans-serif; }
+    .marker.street { border-color: #b45309; background: #fef3c7; color: #78350f; }
+    .marker.active { box-shadow: 0 0 0 4px rgb(13 148 136 / .23), 0 1px 2px rgb(15 23 42 / .2); transform: scale(1.08); }
+    .map-key { position: absolute; z-index: 650; right: 12px; bottom: 28px; min-width: 190px; border: 1px solid #cbd5e1; border-radius: .45rem; background: rgb(255 255 255 / .94); box-shadow: 0 3px 12px rgb(15 23 42 / .13); padding: .55rem .65rem; color: #334155; font-size: .66rem; font-weight: 750; line-height: 1.4; pointer-events: none; }
+    .key-title { margin-bottom: .28rem; color: #0f172a; font-size: .67rem; font-weight: 950; }
+    .key-row { display: flex; align-items: center; gap: .38rem; margin: .15rem 0; }
+    .key-dot { width: .62rem; height: .62rem; border: 2px solid #0e7490; border-radius: 999px; background: #e0f2fe; }
+    .key-dot.street { border-color: #b45309; background: #fef3c7; }
+    .key-line { width: 1.4rem; height: 0; border-top: 3px dashed #0e7490; }
+    .leaflet-popup-content-wrapper { border-radius: .45rem; box-shadow: 0 4px 18px rgb(15 23 42 / .22); }
+    .leaflet-popup-content { margin: .72rem .82rem; color: #0f172a; font: 700 .74rem/1.38 Inter, ui-sans-serif, sans-serif; }
+    .leaflet-popup-content strong { color: #0c4a6e; font-size: .82rem; }
+    .leaflet-popup-content small { color: #64748b; font-size: .67rem; font-weight: 700; }
+    @media (max-width: 880px) { .app { grid-template-columns: minmax(300px, 350px) minmax(0, 1fr); } .metric-grid { gap: .35rem; padding: .55rem; } .metric { padding: .45rem; } .map-key { display: none; } }
+    @media (max-width: 680px) { body { overflow: auto; } .app { height: auto; min-height: 100dvh; grid-template-columns: 1fr; grid-template-rows: 48dvh auto; overflow: visible; } #map { grid-row: 1; height: 48dvh; min-height: 300px; } .route-panel { grid-row: 2; border-top: 1px solid #cbd5e1; border-right: 0; box-shadow: none; max-height: none; } .stop-list { max-height: 64dvh; } .route-header { padding: .9rem; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="route-panel" aria-label="Route details and stops">
+      <header class="route-header">
+        <p class="eyebrow">Local-only one-off route demonstration</p>
+        <h1>VIAOPTIMA SOLUTIONS</h1>
+        <p class="route-subtitle">DragonFly road route - Wed 22 Jul 2026 - Five Dock to Marrickville</p>
+        <span class="route-status">Road-network route</span>
+      </header>
+      <section class="metric-grid" aria-label="Route metrics">
+        <div class="metric"><span>Stops</span><strong>29</strong></div>
+        <div class="metric"><span>Packages</span><strong>29</strong></div>
+        <div class="metric"><span>Road distance</span><strong>25.9 km</strong></div>
+        <div class="metric"><span>Driving time</span><strong>51 min</strong></div>
+        <div class="metric"><span>Stop service</span><strong>2 h 54</strong></div>
+        <div class="metric estimate"><span>Est. route duration</span><strong>3 h 45</strong></div>
+      </section>
+      <p class="route-note">Driving time follows the public road network. Estimated duration adds a planning allowance of 6 minutes at each stop; it excludes live traffic, breaks, loading and depot travel.</p>
+      <div class="stop-controls">
+        <input id="stop-search" class="stop-search" type="search" placeholder="Search a stop or address" aria-label="Search route stops" />
+        <span id="stop-count" class="stop-count">29 stops</span>
+      </div>
+      <div id="stops" class="stop-list" aria-label="All route stops"></div>
+    </aside>
+    <section id="map" aria-label="Road-network route map"></section>
+    <aside class="map-key" aria-label="Map key">
+      <div class="key-title">Route map</div>
+      <div class="key-row"><span class="key-line"></span><span>Road-network sequence</span></div>
+      <div class="key-row"><span class="key-dot"></span><span>Property-level location (22)</span></div>
+      <div class="key-row"><span class="key-dot street"></span><span>Street-level location (7)</span></div>
+    </aside>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const rawStops = [
+      [1, '121 First Ave, Five Dock, NSW', -33.867672708, 151.136115246, 'street'],
+      [2, 'Fairlight St, cnr Ramsay Rd, Five Dock, NSW', -33.870355739, 151.130947551, 'street'],
+      [3, '126-128 Frederick St, Ashfield, NSW', -33.87921216, 151.12451473, 'exact'],
+      [4, '18 Bland St, Ashfield, NSW', -33.88524524, 151.12472255, 'exact'],
+      [5, '22 Charlotte St, Ashfield, NSW', -33.88646541, 151.12532713, 'exact'],
+      [6, '117 Liverpool Rd, Ashfield, NSW', -33.88958896, 151.12879068, 'exact'],
+      [7, '19 Victoria St, Ashfield, NSW', -33.89237451, 151.12960804, 'exact'],
+      [8, '31 Clissold St, Ashfield, NSW', -33.89492181, 151.12578993, 'exact'],
+      [9, 'Holden St, Ashbury, NSW', -33.899561163, 151.12424989, 'street'],
+      [10, '48 Arthur St, Ashfield, NSW', -33.89192777, 151.1198951, 'exact'],
+      [11, '8-10 The Strand, Croydon, NSW', -33.8836493, 151.1149109, 'exact'],
+      [12, '11 The Strand, Croydon, NSW', -33.88349962, 151.11420012, 'exact'],
+      [13, '16 Hardy St, Ashbury, NSW', -33.901507723, 151.112157343, 'street'],
+      [14, '8 Crinan St, Hurlstone Park, NSW', -33.90994913, 151.13177086, 'exact'],
+      [15, '208 Wardell Rd, Dulwich Hill, NSW', -33.90891937, 151.1439196, 'exact'],
+      [16, '80 Wardell Rd, Dulwich Hill, NSW', -33.90846713, 151.14372909, 'exact'],
+      [17, '303 Wardell Rd, Dulwich Hill, NSW', -33.90846713, 151.14372909, 'exact'],
+      [18, '68 The Boulevarde, Lewisham, NSW', -33.89723148, 151.14512181, 'exact'],
+      [19, 'Moonbie St, Summer Hill, NSW', -33.893744856, 151.136781826, 'street'],
+      [20, '47 Grosvenor Crescent, Summer Hill, NSW', -33.88928715, 151.13721624, 'exact'],
+      [21, '1 Haberfield Rd, Haberfield, NSW', -33.88642832, 151.14075084, 'exact'],
+      [22, '3 Carlton Crescent, Summer Hill, NSW', -33.89247957, 151.14315646, 'exact'],
+      [23, '1B The Bast St, Lewisham, NSW', -33.89205, 151.1474, 'street-assumed'],
+      [24, '1C Thomas St, Lewisham, NSW', -33.891580078, 151.148162629, 'street'],
+      [25, '37 New Canterbury Rd, Petersham, NSW', -33.89610396, 151.15357711, 'exact'],
+      [26, 'Shop 1 & 2, 88-94 New Canterbury Rd, Petersham, NSW', -33.89650851, 151.15375005, 'exact'],
+      [27, '60 New Canterbury Rd, Petersham, NSW', -33.89643819, 151.15485727, 'exact'],
+      [28, '302 Stanmore Rd, Petersham, NSW', -33.89641603, 151.1585974, 'exact'],
+      [29, '28 Marrickville Ave, Marrickville, NSW', -33.90936111, 151.14534261, 'exact']
+    ];
+    const optimizedOriginalOrder = [1, 2, 3, 5, 4, 12, 11, 10, 13, 14, 9, 8, 7, 6, 19, 22, 20, 21, 23, 24, 26, 27, 28, 25, 18, 17, 16, 15, 29];
+    const rawByNumber = new Map(rawStops.map((stop) => [stop[0], stop]));
+    const stops = optimizedOriginalOrder.map((originalNumber, index) => {
+      const [, address, lat, lng, status] = rawByNumber.get(originalNumber);
+      return { number: index + 1, address, lat, lng, status };
+    });
+    const roadGeometry = '|wbr_A_vrg_HtIp^xxAp^~y@`{FzSzuBv{ArbBzjBrUtpDitCzZ|@pqCvrHja@tdAzoCygB~bEfcCbcAyiCqZ~y@mb@iKlb@hKcoE|}Lxk@tf@_p@rhAff@t^aUdXh[x\\be@n^Vsh@`WiG`d@c~@{}@gr@sZ~r@lMlZdn@dUlkBwjEdrA_`Fj]~nAf}EzJb@er@vtCdFoAfiEwf@dVds@vsFhhMru@q`AwFf{CwaGir@wp@`u@aaBp}@hYzhAaGx|AyyHxp@|Ivg@gkBhb@zr@rc@md@bz@orIkGqmAjGpmAkNpwAo`AmQc}@~}Amt@ej@gmAvtA_k@`hDsbCakAs_@tmBgyDe~@}yFcUpAom@gf@aBff@`BqAnm@{fFoO~SahGz@kWmuBlLfAbcAgAccAvhAiS|L_gL~_CfH_`CgHvoAinJ_\\}v@yOdU`Jca@s`@yQ_hCruLxVusBkVm[crCjlDmoAuiCb\\slBdHvJtuDucGlZikDwIcfBdq@|F`yAtwA_]ya@a{@{t@n}CkyAbv@l`@nMshAbjCgvAmRwjB|RuDdEn[eEo[}RtDPue@aa@o`Cpa@uqBqa@tqB|f@deEiMzAhM{Alt@fkDgWhqCft@r{AkuAzsA`e@pz@hx@nuA~dGriEveAodC~zEg|EtqBpbC??nLnLjIyNkIxNzQ~Qd`AmwA';
+    function decodePolyline6(encoded) {
+      let index = 0; let lat = 0; let lng = 0; const coordinates = [];
+      const readDelta = () => { let result = 0; let shift = 0; let byte; do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20); return (result & 1) ? ~(result >> 1) : (result >> 1); };
+      while (index < encoded.length) { lat += readDelta(); lng += readDelta(); coordinates.push([lat / 1e6, lng / 1e6]); }
+      return coordinates;
+    }
+    const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([-33.894, 151.137], 13);
+    const voyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(map);
+    let fallbackLoaded = false;
+    voyager.on('tileerror', () => { if (!fallbackLoaded) { fallbackLoaded = true; L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map); } });
+    const roadCoordinates = decodePolyline6(roadGeometry);
+    L.polyline(roadCoordinates, { color: '#ffffff', weight: 7, opacity: .86, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(map);
+    const roadLine = L.polyline(roadCoordinates, { color: '#0e7490', weight: 4, opacity: .98, dashArray: '8 7', lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    const markers = new Map(); const rows = new Map(); let activeStopNumber = null;
+    const statusLabel = (status) => status === 'exact' ? 'Property-level location' : status === 'street-assumed' ? 'Street-level assumption for this demo' : 'Street-level location';
+    function setActiveStop(number, flyTo = false) {
+      if (activeStopNumber !== null) { markers.get(activeStopNumber)?.getElement()?.querySelector('.marker')?.classList.remove('active'); rows.get(activeStopNumber)?.classList.remove('active'); }
+      activeStopNumber = number;
+      const marker = markers.get(number); const row = rows.get(number);
+      marker?.getElement()?.querySelector('.marker')?.classList.add('active'); row?.classList.add('active');
+      if (flyTo && marker) { map.flyTo(marker.getLatLng(), 16, { duration: .42 }); marker.openPopup(); }
+    }
+    function renderStops(filter = '') {
+      const list = document.querySelector('#stops'); list.replaceChildren(); rows.clear();
+      const query = filter.trim().toLowerCase(); const shown = stops.filter((stop) => `${stop.number} ${stop.address}`.toLowerCase().includes(query));
+      document.querySelector('#stop-count').textContent = `${shown.length} ${shown.length === 1 ? 'stop' : 'stops'}`;
+      if (!shown.length) { list.innerHTML = '<div class="empty-stops">No stops match that search.</div>'; return; }
+      shown.forEach((stop) => {
+        const isStreet = stop.status !== 'exact';
+        const row = document.createElement('button'); row.type = 'button'; row.className = `stop ${isStreet ? 'street' : ''}`; row.innerHTML = `<span class="stop-index">${stop.number}</span><span><span class="stop-address">${stop.address}</span><span class="stop-meta">${statusLabel(stop.status)}</span></span><span class="stop-package">1 pkg</span>`;
+        row.addEventListener('click', () => setActiveStop(stop.number, true));
+        list.append(row); rows.set(stop.number, row);
+        if (stop.number === activeStopNumber) row.classList.add('active');
+      });
+    }
+    stops.forEach((stop) => {
+      const isStreet = stop.status !== 'exact';
+      const icon = L.divIcon({ className: '', html: `<div class="marker ${isStreet ? 'street' : ''}">${stop.number}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+      const marker = L.marker([stop.lat, stop.lng], { icon, keyboard: true }).addTo(map).bindPopup(`<strong>Stop ${stop.number}</strong><br>${stop.address}<br><small>${statusLabel(stop.status)}</small>`);
+      marker.on('click', () => setActiveStop(stop.number)); markers.set(stop.number, marker);
+    });
+    renderStops();
+    document.querySelector('#stop-search').addEventListener('input', (event) => renderStops(event.target.value));
+    map.fitBounds(roadLine.getBounds(), { padding: [62, 62], maxZoom: 14 });
+  </script>
+</body>
+</html>
